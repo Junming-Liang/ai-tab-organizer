@@ -102,9 +102,9 @@ function store(initial={}) {
   const values=structuredClone(initial);
   return {values,setAccessLevel:async()=>{},get:async keys=>keys==null?structuredClone(values):Object.fromEntries((Array.isArray(keys)?keys:[keys]).filter(k=>k in values).map(k=>[k,structuredClone(values[k])])),set:async data=>{Object.assign(values,structuredClone(data));},remove:async keys=>{for(const key of Array.isArray(keys)?keys:[keys])delete values[key];}};
 }
-async function backgroundFixture({permission=true,connected=true,models=[{slug:'gpt-test',display_name:'Test'}],accountId=ACCOUNT_ID,modelsAccountId=accountId}={}) {
-  const native=nativeFixture((message,port)=>ok(message.type==='status'?{connected,...account,accountId}:message.type==='models'?{...account,models,accountId:modelsAccountId}:grouped)(message,port),{permission});
-  const chrome={...native.chromeApi,storage:{session:store(),local:store({settings:{...DEFAULTS}})},runtime:{...native.chromeApi.runtime,id:'test',getURL:()=> 'chrome-extension://test/',onMessage:event(),onStartup:event(),onInstalled:event()},alarms:{get:async()=>null,create:async()=>{},clear:async()=>{},onAlarm:event()},tabs:{query:async()=>tabs.map((t,index)=>({...t,url:`https://${t.domain}/`,groupId:-1,index})),onCreated:event(),onUpdated:event()},windows:{onRemoved:event()}};
+async function backgroundFixture({permission=true,connected=true,models=[{slug:'gpt-test',display_name:'Test'}],accountId=ACCOUNT_ID,modelsAccountId=accountId,classification=grouped}={}) {
+  const native=nativeFixture((message,port)=>ok(message.type==='status'?{connected,...account,accountId}:message.type==='models'?{...account,models,accountId:modelsAccountId}:(typeof classification==='function'?classification(message):classification))(message,port),{permission});
+  const chrome={...native.chromeApi,storage:{session:store(),local:store({settings:{...DEFAULTS}})},runtime:{...native.chromeApi.runtime,id:'test',getURL:()=> 'chrome-extension://test/',onMessage:event(),onStartup:event(),onInstalled:event()},alarms:{get:async()=>null,create:async()=>{},clear:async()=>{},onAlarm:event()},tabs:{query:async()=>tabs.map((t,index)=>({...t,url:`https://${t.domain}/`,groupId:-1,index})),onCreated:event(),onUpdated:event()},tabGroups:{query:async()=>[]},windows:{onRemoved:event()}};
   globalThis.chrome=chrome;
   await import(`../extension/background.js?siwc-test=${Math.random()}`);
   const listener=[...chrome.runtime.onMessage.listeners][0];
@@ -252,4 +252,23 @@ test('account changes detected during save clear the stale UI binding and requir
     assert.equal($('siwcAccount').value,'');assert.equal($('siwcModel').value,'');assert.equal($('siwcConsent').checked,false);
     assert.equal($('save').disabled,false);
   } finally {f.restore();}
+});
+
+test('integrated SIWC planning keeps old group context local and sends only unmatched tabs',async()=>{
+  const f=await backgroundFixture({classification:message=>({groups:[{title:'研究',color:'purple',tabIds:message.tabs.map(tab=>tab.id)}]})});
+  assert.equal((await f.message({type:'saveSettings',settings:siwcConfig})).ok,true);
+  f.chrome.tabs.query=async()=>[
+    {id:10,windowId:1,title:'Private old member title',url:'https://github.com/private-old',groupId:88,index:0},
+    {id:1,windowId:1,title:'GitHub new',url:'https://github.com/new',groupId:-1,index:1},
+    {id:2,windowId:1,title:'Research A',url:'https://arxiv.org/new',groupId:-1,index:2},
+    {id:3,windowId:1,title:'Research B',url:'https://research.example/new',groupId:-1,index:3},
+  ];
+  f.chrome.tabGroups.query=async()=>[{id:88,windowId:1,title:'Private customer group',color:'orange',collapsed:true}];
+  const response=await f.message({type:'preview',windowId:1});
+  assert.equal(response.ok,true,response.error);
+  const classification=f.calls.find(call=>call.type==='classify');
+  assert.deepEqual(classification.tabs.map(tab=>tab.id),[2,3]);
+  assert.doesNotMatch(JSON.stringify(classification),/Private|private-old|customer|github|targetGroupId|existingGroups/);
+  assert.deepEqual(response.result.groups.find(group=>group.targetGroupId===88).tabIds,[1]);
+  assert.deepEqual(response.result.groups.find(group=>group.targetGroupId==null).tabIds,[2,3]);
 });

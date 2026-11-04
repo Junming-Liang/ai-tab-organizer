@@ -39,7 +39,7 @@
 
 已发布 0.1.0 的 [GitHub CI](https://github.com/Junming-Liang/ai-tab-organizer/actions/runs/41836577797) 通过：26 项 JS 测试、构建、真实 Chromium 离线预览/应用/撤销/固定标签/导航与设置测试。截图已人工检查。该结果仅对应提交 `57677d2dccd7658f06bc25976fe868fdb5ce2815`，不能当作当前 SIWC 增量通过真实浏览器验收。
 
-本地 0.2.0-dev：43 项 JS 测试通过（含 SIWC 权限拒绝、端口断开/超时、重复操作、独立同意、账户切换和模型校验）；31 项 companion Python 模拟安全测试通过。隔离 venv 安装与依赖一致性检查通过（PyJWT 2.15.1、keyring 25.7.0、cryptography 50.0.2）；实际钥匙串后端未调用。新 UI 本地真实 Chromium 验收因云环境 socket 系统调用 EPERM 在启动阶段受阻；CI 已准备额外 SIWC 内存 fixture 流程（权限拒绝、账户/模型选择、预览、切账户拒绝与同意重置），尚待结果。未执行真实 OAuth、系统钥匙串读取、实际 host 安装或付费推理。
+本地 0.2.0-dev：43 项 JS 测试通过（含 SIWC 权限拒绝、端口断开/超时、重复操作、独立同意、账户切换和模型校验）；31 项 companion Python 模拟安全测试通过。隔离 venv 安装与依赖一致性检查通过（PyJWT 2.15.1、keyring 25.7.0、cryptography 50.0.2）；实际钥匙串后端未调用。新 UI 本地 Chromium 因环境 socket EPERM 无法启动，但 [SIWC 分支 CI](https://github.com/Junming-Liang/ai-tab-organizer/actions/runs/41841919970) 已在真实 Chromium 中通过纯内存 fixture 的权限拒绝、账户/模型选择、预览、切账户拒绝与同意重置；截图已人工检查。该结果对应 `71011668d94a9139086d715b6911baab8bc6d1e0`，并非真实 OAuth 或原生 host 验收。未执行真实 OAuth、系统钥匙串读取、实际 host 安装或付费推理。
 
 ### Companion 模拟覆盖
 
@@ -58,3 +58,7 @@
 4. 验证退出、远程撤销、浏览器重启及权限移除。不把真实账户/token/标题放进公开 CI 或 issue。
 
 这些步骤尚未执行，不能用模拟测试代替。
+
+## 整合已有组修复的新增验收
+
+单标签匹配原生旧组、原有名称/颜色/折叠状态与成员保留、撤销只移出新增标签、用户手工改组后保守撤销、旧组重命名使预览失效；可编辑新组名、跳过和重新选择目标，跨面板旧 revision 拒绝。浏览器 CI 同时覆盖真实 Chrome 分组 API 与纯内存 SIWC fixture，不执行真实 OAuth。整合后本地 72 项 JS 与 31 项 Python 测试、语法检查和打包已通过；精确提交仍需重新核验 CI。

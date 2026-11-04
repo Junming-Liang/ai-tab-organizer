@@ -13,7 +13,7 @@ test('persist undo before mutating and apply only previewed groups',async()=>{
   const f=fixture();let undo;
   await applyGroups(f.api,f.preview,DEFAULTS,async value=>{if(!undo)assert.equal(f.calls.length,0);undo=structuredClone(value);});
   assert.deepEqual(undo.createdGroupIds,[8]);assert.equal(f.tabs[2].groupId,99);assert.deepEqual(undo.affected,[1,2]);
-  await undoGroups(f.api,undo);assert.deepEqual(f.calls.find(c=>c[0]==='ungroup'),['ungroup',[1,2]]);assert.equal(f.tabs[2].groupId,99);
+  await undoGroups(f.api,undo);assert.deepEqual(f.calls.filter(c=>c[0]==='ungroup').flatMap(c=>c[1]),[1,2]);assert.equal(f.tabs[2].groupId,99);
 });
 test('stale preview fails before any changes',async()=>{
   const f=fixture();f.tabs[0].title='Changed';
@@ -41,7 +41,7 @@ test('navigation to an excluded domain between query and get aborts grouping',as
 test('undo reconciles group creation if saving returned group ID fails',async()=>{
   const f=fixture();let stored;let count=0;
   await assert.rejects(applyGroups(f.api,f.preview,DEFAULTS,async value=>{count++;if(count===3)throw Error('storage failed');stored=structuredClone(value);}));
-  assert.equal(stored.phase,'applying');assert.deepEqual(stored.pending,[1,2]);assert.equal(f.tabs[0].groupId,8);
+  assert.equal(stored.phase,'applying');assert.deepEqual(stored.pending,{tabIds:[1,2],targetGroupId:null});assert.equal(f.tabs[0].groupId,8);
   const result=await undoGroups(f.api,stored);assert.equal(result.tabs,2);assert.equal(f.tabs[0].groupId,-1);
 });
 test('interrupted recovery reports unresolved membership changes',async()=>{

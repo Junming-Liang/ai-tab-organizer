@@ -73,14 +73,14 @@ export function validateGroups(value, tabs) {
   });
 }
 const TOPICS = [
-  ['开发', 'blue', /github|gitlab|stackoverflow|developer|devdocs|编程|代码|api|typescript|javascript|python|rust|react|codex/i],
-  ['研究', 'purple', /arxiv|scholar|paper|research|论文|研究|实验/i],
+  ['开发', 'blue', /github|gitlab|stackoverflow|developer|devdocs|编程|代码|\b(?:api|typescript|javascript|python|rust|react|codex)\b/i],
+  ['研究', 'purple', /arxiv|scholar|\b(?:paper|research)\b|论文|研究|实验/i],
   ['工作', 'green', /notion|slack|figma|docs\.google|linear\.app|工作|项目|文档|会议/i],
   ['购物', 'orange', /amazon|taobao|tmall|jd\.com|shopping|购物|商品|商城/i],
   ['娱乐', 'pink', /youtube|bilibili|netflix|spotify|twitch|视频|音乐|电影|游戏/i],
-  ['阅读', 'cyan', /wikipedia|medium|substack|news|新闻|文章|阅读|博客/i],
+  ['阅读', 'cyan', /wikipedia|medium|substack|\bnews\b|新闻|文章|阅读|博客/i],
 ];
-export function localGroups(tabs) {
+export function localBuckets(tabs) {
   const buckets = new Map();
   for (const tab of tabs) {
     const topic = TOPICS.find(([, , pattern]) => pattern.test(`${tab.domain} ${tab.title}`));
@@ -88,5 +88,7 @@ export function localGroups(tabs) {
     if (!buckets.has(title)) buckets.set(title, {title, color: topic?.[1] || COLORS[buckets.size % COLORS.length], tabIds: []});
     buckets.get(title).tabIds.push(tab.id);
   }
-  return [...buckets.values()].filter(g => g.tabIds.length >= 2).slice(0, 20);
+  return [...buckets.values()];
 }
+
+export function localGroups(tabs) { return localBuckets(tabs).filter(group => group.tabIds.length >= 2).slice(0,20); }

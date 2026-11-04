@@ -2,6 +2,7 @@ import { DEFAULTS, normalizeSettings, eligibleTabs, fingerprint, apiEndpoint } f
 import { classify } from './providers.js';
 import { siwcStatus, siwcModels } from './siwc.js';
 import { applyGroups, undoGroups } from './organizer.js';
+import {snapshotGroups, makePlan, validatePlan, mergeTargets} from './planning.js';
 
 let queue = Promise.resolve();
 const previewsInFlight = new Map();
@@ -24,30 +25,35 @@ const keyFor = (type, windowId) => `${type}:${windowId}`;
 async function read(type, windowId) { const key = keyFor(type, windowId); return (await chrome.storage.session.get(key))[key]; }
 async function write(type, windowId, value) { await chrome.storage.session.set({[keyFor(type, windowId)]: value}); }
 async function status(windowId, message, error = false) { await write('status', windowId, {message, error, at: Date.now()}); }
-async function preview(windowId) {
+async function preview(windowId, automatic = false) {
   const config = await settings();
-  const tabs = eligibleTabs(await chrome.tabs.query({windowId}), config);
-  if (tabs.length < 2) throw new Error('当前窗口至少需要两个符合条件的未分组标签。固定、已分组、隐身和排除域名会跳过。');
+  // A failed refresh must not leave an older, misleading preview actionable.
+  await chrome.storage.session.remove(keyFor('preview',windowId));
+  const current = await chrome.tabs.query({windowId});
+  const tabs = eligibleTabs(current, config);
+  if (!tabs.length) throw new Error('当前窗口没有符合条件的未分组标签。固定、隐身和排除域名会跳过。');
+  const existingGroups = snapshotGroups(await chrome.tabGroups.query({windowId}), current, config, windowId);
   if (config.provider === 'api') {
     const {origin} = apiEndpoint(config.baseUrl);
     if (!await chrome.permissions.contains({origins: [origin]})) throw new Error('API 站点权限尚未授权，请打开设置重新保存。');
   }
   await status(windowId, '正在生成分类，请稍候…');
-  const groups = await classify(tabs, config, {apiKey: await getKey(config)});
-  const result = {windowId, createdAt: Date.now(), groups, tabs, fingerprint: fingerprint(tabs), settingsFingerprint: JSON.stringify(config)};
+  const apiKey = await getKey(config);
+  const groups = await makePlan(tabs, existingGroups, remaining => classify(remaining, config, {apiKey}));
+  const result = {id:crypto.randomUUID(), revision:0, automatic, windowId, createdAt:Date.now(), groups, tabs, existingGroups, fingerprint:fingerprint(tabs), settingsFingerprint:JSON.stringify(config)};
   await write('preview', windowId, result);
-  await status(windowId, groups.length ? `已生成 ${groups.length} 个组的预览，尚未改动标签。` : '没有找到需要合并的标签，保持原样。');
+  await status(windowId, groups.length ? `已生成 ${groups.length} 个组的预览，优先加入已有组。可调整目标后应用。` : '没有明确匹配的分组。可在下方为标签选择已有组，或保持原样。');
   return result;
 }
-async function apply(windowId) {
+async function apply(windowId, message = {}) {
   const value = await read('preview', windowId); const config = await settings();
   const previousUndo = await read('undo', windowId);
   if (previousUndo && previousUndo.phase !== 'complete') throw new Error('上次整理未完整结束，请先撤销恢复，再进行新的整理。');
-  if (!value || JSON.stringify(config) !== value.settingsFingerprint) throw new Error('请先生成新的预览。');
+  if (!value || typeof value.id !== 'string' || !Number.isInteger(value.revision) || message.previewId !== value.id || message.revision !== value.revision || JSON.stringify(config) !== value.settingsFingerprint) throw new Error('预览已更新，请刷新面板后检查新的预览。');
   if (!value.groups.length) throw new Error('预览中没有可应用的分组。');
   const result = await applyGroups(chrome, value, config, undo => write('undo', windowId, undo));
   await chrome.storage.session.remove(keyFor('preview', windowId));
-  await status(windowId, `已整理 ${result.tabs} 个标签到 ${result.groups} 个组，可撤销。`);
+  await status(windowId, `已整理 ${result.tabs} 个标签到 ${result.groups} 个组（${result.existing} 个已有组），可撤销。`);
   return result;
 }
 async function getState(windowId) {
@@ -91,7 +97,16 @@ async function handle(message) {
       const operation = serial(() => preview(message.windowId)).finally(() => previewsInFlight.delete(message.windowId));
       previewsInFlight.set(message.windowId, operation); return operation;
     }
-    case 'apply': return serial(() => apply(message.windowId));
+    case 'editPreview': return serial(async () => {
+      const value = await read('preview',message.windowId);
+      if (!value || typeof value.id !== 'string' || !Number.isInteger(value.revision) || value.id !== message.previewId || value.revision !== message.revision) throw new Error('预览已更新，请刷新面板后重试。');
+      if (Date.now()-value.createdAt > 10*60_000 || JSON.stringify(await settings()) !== value.settingsFingerprint) throw new Error('预览已过期或设置变化，请重新生成。');
+      // Validate before merging, so duplicate tabs cannot be hidden by an edit.
+      value.groups = mergeTargets(validatePlan(message.groups,value.tabs,value.existingGroups));
+      value.revision++; await write('preview',message.windowId,value);
+      await status(message.windowId,'预览已调整，尚未更改标签。'); return value;
+    });
+    case 'apply': return serial(() => apply(message.windowId,message));
     case 'undo': return serial(async () => {
       const undo = await read('undo', message.windowId); if (!undo) throw new Error('没有可撤销的操作。');
       const result = await undoGroups(chrome, undo);
@@ -135,12 +150,17 @@ chrome.alarms.onAlarm.addListener(alarm => {
       if (!key.startsWith('pending:') || Date.now() - value.at < 15_000) continue;
       const windowId = Number(key.split(':')[1]);
       if (Date.now() - (values[keyFor('lastAuto',windowId)] || 0) < 5 * 60_000) continue;
+      const pendingPreview = await read('preview',windowId);
+      // Do not replace a manual preview while someone is reviewing/editing it.
+      if (pendingPreview && !pendingPreview.automatic && Date.now()-pendingPreview.createdAt < 10*60_000) continue;
       await chrome.storage.session.remove(key);
       await write('lastAuto', windowId, Date.now());
       try {
         const undo = await read('undo', windowId);
         if (undo && undo.phase !== 'complete') throw new Error('上次整理被中断，请先撤销恢复。');
-        const value = await preview(windowId); if (value.groups.length) await apply(windowId);
+        const value = await preview(windowId,true);
+        if (value.groups.length) await apply(windowId,{previewId:value.id,revision:value.revision});
+        else await chrome.storage.session.remove(keyFor('preview',windowId));
       }
       catch(error) { await status(windowId, `自动整理暂停本次尝试：${error.message}`, true); }
     }
