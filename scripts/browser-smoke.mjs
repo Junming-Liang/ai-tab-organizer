@@ -44,5 +44,57 @@ try {
   await options.locator('#categories').fill('开发, 阅读');await options.locator('#save').click();
   await options.waitForFunction(()=>document.querySelector('#status').textContent.includes('设置已保存'));
   await options.screenshot({path:'artifacts/settings.png',fullPage:true});
-  console.log('Chromium smoke passed: extension loads; offline preview/apply/undo; pinned preserved; stale navigation rejected; settings save.');
+  // SIWC browser UI uses in-memory Chrome API fixtures only. No OS host,
+  // credential store, OAuth endpoint, permission grant or inference is invoked.
+  await options.selectOption('#provider','siwc');
+  await options.evaluate(()=>{chrome.permissions.request=async()=>false;});
+  await options.locator('#siwc-connect').click();
+  await options.waitForFunction(()=>document.querySelector('#siwc-status').textContent.includes('未授权'));
+  assert.equal(await options.locator('#siwcConsent').isChecked(),false);
+  await options.evaluate(()=>{chrome.permissions.request=async()=>true;});
+  await worker.evaluate(()=>{
+    const originalContains=chrome.permissions.contains.bind(chrome.permissions);
+    chrome.permissions.contains=async query=>query.permissions?.includes('nativeMessaging')?true:originalContains(query);
+    self.siwcFixture={accountId:'a'.repeat(16),requests:[]};
+    chrome.runtime.connectNative=name=>{
+      if(name!=='com.ai_tab_organizer.siwc')throw new Error('Unexpected native host');
+      const listeners=new Set();const disconnectListeners=new Set();
+      const port={onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},onDisconnect:{addListener:fn=>disconnectListeners.add(fn),removeListener:fn=>disconnectListeners.delete(fn)},disconnect(){},postMessage(message){
+        self.siwcFixture.requests.push(message);
+        const accountId=self.siwcFixture.accountId;const account='Synthetic test account';
+        let result;
+        if(message.type==='status')result={connected:true,accountId,account};
+        else if(message.type==='models')result={accountId,account,models:[{slug:'fixture-model',display_name:'Synthetic model'}]};
+        else if(message.type==='classify'&&message.accountId===accountId){
+          if(message.tabs.some(tab=>Object.keys(tab).sort().join(',')!=='domain,id,title'))throw new Error('Unexpected metadata');
+          result={groups:[{title:'Fixture group',color:'purple',tabIds:message.tabs.map(tab=>tab.id)}]};
+        }
+        const response=result?{id:message.id,ok:true,result}:{id:message.id,ok:false,error:'当前 ChatGPT 账户已变化，请刷新账户。'};
+        queueMicrotask(()=>{for(const listener of listeners)listener(response);});
+      }};
+      return port;
+    };
+  });
+  await options.locator('#siwc-connect').click();
+  await options.waitForFunction(()=>document.querySelector('#siwc-status').textContent.includes('Synthetic test account'));
+  await options.selectOption('#siwcModel','fixture-model');
+  await options.locator('#siwcConsent').check();
+  await options.locator('#save').click();
+  await options.waitForFunction(()=>document.querySelector('#status').textContent.includes('SIWC 设置已保存'));
+  await options.screenshot({path:'artifacts/settings-siwc.png',fullPage:true});
+  await popup.reload();
+  await popup.waitForFunction(()=>document.querySelector('#engine').textContent.includes('SIWC'));
+  await popup.locator('#preview').click();
+  await popup.waitForFunction(()=>document.querySelector('.group')?.textContent.includes('Fixture group'));
+  await popup.screenshot({path:'artifacts/popup-siwc.png',fullPage:true});
+  assert.equal((await worker.evaluate(()=>chrome.tabGroups.query({}))).length,0);
+  await worker.evaluate(()=>{self.siwcFixture.accountId='b'.repeat(16);});
+  await popup.locator('#preview').click();
+  await popup.waitForFunction(()=>document.querySelector('#status').textContent.includes('账户已变化'));
+  await options.locator('#siwc-refresh').click();
+  await options.waitForFunction(()=>document.querySelector('#siwc-status').textContent.includes('账户已切换'));
+  assert.equal(await options.locator('#siwcModel').inputValue(),'');
+  assert.equal(await options.locator('#siwcConsent').isChecked(),false);
+  assert.equal((await worker.evaluate(()=>chrome.tabGroups.query({}))).length,0);
+  console.log('Chromium smoke passed: extension loads; offline preview/apply/undo; pinned preserved; stale navigation rejected; settings save; SIWC fixture permission denial, account/model selection, preview, changed-account rejection and consent reset. No live OAuth or native host used.');
 } finally { await context?.close(); await rm(profile,{recursive:true,force:true}); }

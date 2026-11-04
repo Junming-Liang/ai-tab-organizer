@@ -3,6 +3,7 @@ import {spawnSync} from 'node:child_process';
 import assert from 'node:assert/strict';
 const manifest=JSON.parse(await readFile('extension/manifest.json','utf8'));
 assert.equal(manifest.manifest_version,3);
+assert.deepEqual(manifest.optional_permissions,['nativeMessaging']);
 assert.deepEqual([...manifest.permissions].sort(),['alarms','storage','tabGroups','tabs']);
 assert.ok(!manifest.content_scripts && !manifest.host_permissions && !manifest.externally_connectable);
 for(const dir of ['extension','scripts','tests'])for(const file of await readdir(dir))if(/\.(mjs|js)$/.test(file)){
@@ -13,3 +14,7 @@ for(const file of ['popup.html','options.html']){
   const html=await readFile(`extension/${file}`,'utf8');assert.doesNotMatch(html,/on(?:click|load|error)=|<script[^>]+https?:/i);
 }
 console.log('Syntax, manifest and extension CSP checks passed.');
+
+const py=spawnSync('python3',['-m','compileall','-q','companion/ai_tab_companion','companion/tests'],{encoding:'utf8'});
+assert.equal(py.status,0,py.stderr);
+console.log('Companion Python syntax checks passed.');

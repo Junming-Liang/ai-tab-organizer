@@ -2,9 +2,9 @@
 
 **把杂乱的 Chrome 标签，整理成原生标签组。**
 
-一个轻量、隐私优先的 Manifest V3 扩展。先预览、再应用，随时撤销；支持本地规则和 OpenAI / DeepSeek 兼容 API。
+一个轻量、隐私优先的 Manifest V3 扩展。先预览、再应用，随时撤销；支持本地规则、OpenAI / DeepSeek 兼容 API，以及实验性的独立 ChatGPT 计划授权。
 
-> 0.1.0 是可加载的首版原型，不是 Chrome Web Store 上架版本。默认离线运行，不会启动 Codex，也不会读取 Codex 凭据或会话。
+> 本地 0.2.0-dev 新增实验性 SIWC companion，尚未发布或做真实 OAuth 验收。已发布的 0.1.0 只含离线规则和 API。默认离线运行，不启动或读取 Codex；不是 Chrome Web Store 上架版本。
 
 ## 功能
 
@@ -16,7 +16,7 @@
 - **自动整理**：明确开启后，在新标签加载完成后处理。15 秒静默窗口、每分钟检查、每窗口至少 5 分钟冷却。默认关闭。
 - **域名排除**：可排除邮件、银行、内部系统等域名及其子域名。
 - **最少数据**：AI 仅收到数值标签 ID、标题、域名，以及分类偏好。不会发送完整 URL、路径、查询参数或页面正文。
-- **Key 的保存由你决定**：默认仅当前浏览器会话；持久保存需要主动勾选。Key 与目标 API 地址绑定，不跟随地址变化复用。切换并保存本地模式会清除 Key。
+- **API Key 仅保留当前会话**：不提供明文持久保存；浏览器关闭后需重填，新版启动时会清除旧版持久保存的 Key。Key 与目标 API 地址绑定，不跟随地址变化复用。切换并保存本地模式会清除 Key。
 
 ## 安装开发版
 
@@ -40,17 +40,19 @@
 - API 请求在 25 秒内完成，否则保留标签不变并报错。请求不会跟随重定向，也不会携带浏览器 Cookie。
 - **API Key 按服务商 API 计费，不使用 ChatGPT 订阅额度。**
 
-### 关于本机 Codex 额度
+### 独立 ChatGPT 计划授权（实验性）
 
 本版刻意不使用 `codex exec` / `codex app-server`，不创建 Codex 会话，不读取 `~/.codex` 或浏览器中其他应用的凭据。
 
-官方 Sign in with ChatGPT 支持独立授权并直接调用 Responses API，是后续可行方向，但**此版本尚未实现**。它仍可能消耗同一 ChatGPT 计划的共享使用额度。安全实施需要独立 OAuth、PKCE/state/nonce、ID token 校验与操作系统凭据存储，不能把 Codex 登录文件复制进扩展。详见 [Codex 与独立授权方案](docs/codex-integration.md)。
+本地开发版新增独立 Python companion：系统浏览器 OAuth、PKCE/state/nonce、ID token 签名校验、macOS Keychain / Linux Secret Service、账户绑定与原生消息通信。默认关闭，需手动安装并单独授权。**只完成模拟测试，未通过真实登录、系统钥匙串和额度调用验收**；Windows 暂未实现。
+
+它直接调用公开 Responses API，不创建 Codex 会话，但仍会消耗共享 ChatGPT 计划额度，可能影响其他应用剩余额度。Token 不进入扩展，无 API Key 自动计费回退。查看 [companion 安装与账户操作](companion/README.md) 和 [安全架构](docs/codex-integration.md)。
 
 ## 隐私与安全
 
 标题本身也可能包含私人信息。启用 AI 前，请确认服务商和排除列表适合自己的浏览场景。详见 [隐私说明](PRIVACY.md) 和 [安全说明](SECURITY.md)。
 
-没有遥测、广告、项目后端、远程脚本或网页内容脚本。API Key 不会写入日志、源码或同步存储；Chrome 本地持久存储**不是加密保险箱**。
+没有遥测、广告、项目后端、远程脚本或网页内容脚本。API Key 不会写入日志、源码或同步存储；API Key 仅在会话存储中，ChatGPT OAuth token 仅在独立 companion 的系统钥匙串中。
 
 ## 开发与测试
 
@@ -60,6 +62,8 @@
 npm run check
 npm test
 npm run build
+# companion 另需安装其 Python 依赖，然后：
+npm run test:companion
 ```
 
 输出：`dist/extension/`、扩展安装 ZIP、完整源码 ZIP 及各自的 SHA-256 文件。
@@ -90,7 +94,9 @@ CHROMIUM_PATH=/usr/bin/chromium npm run test:browser
 ## 项目结构
 
 - `extension/core.js`：元数据最小化、排除规则、模型结果校验和离线分类。
-- `extension/providers.js`：可扩展 provider 接口；当前只实现本地规则和 API Key。
+- `extension/providers.js`：可扩展 provider 接口；实现本地规则、API Key 与实验性独立 SIWC。
+- `extension/siwc.js`：可选 Native Messaging、独立账户与模型校验。
+- `companion/`：独立 OAuth、系统钥匙串、受限 Responses 和 Python 安全测试。
 - `extension/organizer.js`：分组、重验、撤销与中断恢复。
 - `extension/background.js`：串行任务、设置、会话记录和自动整理。
 - `extension/popup.*` / `options.*`：界面。

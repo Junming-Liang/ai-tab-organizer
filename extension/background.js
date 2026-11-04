@@ -1,5 +1,6 @@
 import { DEFAULTS, normalizeSettings, eligibleTabs, fingerprint, apiEndpoint } from './core.js';
 import { classify } from './providers.js';
+import { siwcStatus, siwcModels } from './siwc.js';
 import { applyGroups, undoGroups } from './organizer.js';
 
 let queue = Promise.resolve();
@@ -8,15 +9,16 @@ function serial(operation) { const work = queue.then(operation, operation); queu
 const settingsReady = Promise.all([
   chrome.storage.local.setAccessLevel({accessLevel: 'TRUSTED_CONTEXTS'}),
   chrome.storage.session.setAccessLevel({accessLevel: 'TRUSTED_CONTEXTS'}),
-]);
-async function settings() { await settingsReady; return {...DEFAULTS, ...(await chrome.storage.local.get('settings')).settings}; }
+ ]).then(() => chrome.storage.local.remove(['credentials','apiKey']));
+async function settings() { await settingsReady; return {...DEFAULTS, ...(await chrome.storage.local.get('settings')).settings, rememberKey:false}; }
 async function getKey(config) {
   if (config.provider !== 'api') return '';
   const endpoint = apiEndpoint(config.baseUrl).endpoint;
-  const [session, local] = await Promise.all([chrome.storage.session.get('credentials'), chrome.storage.local.get('credentials')]);
+  await settingsReady;
+  const session = await chrome.storage.session.get('credentials');
   // Credential and destination are one record. A partial settings save can never
   // send a newly entered key to the previous endpoint.
-  return [session.credentials, local.credentials].find(record => record?.endpoint === endpoint)?.key || '';
+  return session.credentials?.endpoint === endpoint ? session.credentials.key || '' : '';
 }
 const keyFor = (type, windowId) => `${type}:${windowId}`;
 async function read(type, windowId) { const key = keyFor(type, windowId); return (await chrome.storage.session.get(key))[key]; }
@@ -55,25 +57,32 @@ async function getState(windowId) {
   return {settings: config, count: eligibleTabs(tabs,config).length, total: tabs.length, preview: value, canUndo: !!undo, status: lastStatus};
 }
 async function saveSettings(message) {
+  await settingsReady;
   const config = normalizeSettings(message.settings);
   if (config.provider === 'api' && !await chrome.permissions.contains({origins:[apiEndpoint(config.baseUrl).origin]})) throw new Error('需要授权此 API 站点。');
+  if (config.provider === 'siwc') {
+    const account = await siwcStatus();
+    if (!account.connected) throw new Error('尚未登录 ChatGPT。请在本机终端运行 ai-tab-companion login，再检查连接。');
+    const {models, accountId} = await siwcModels();
+    if (account.accountId !== accountId || config.siwcAccount !== accountId) throw new Error('ChatGPT 账户发生变化，请刷新连接、重新选择模型并确认数据发送同意。');
+    if (!models.some(model => model.slug === config.siwcModel)) throw new Error('所选 ChatGPT 模型当前不可用。请重新检查连接并选择模型。');
+  }
   let apiKey = typeof message.apiKey === 'string' ? message.apiKey.trim() : await getKey(config);
   if (apiKey.length > 4096 || /[\r\n]/.test(apiKey)) throw new Error('API Key 格式无效。');
   const credentials = config.provider === 'api' && apiKey ? {key: apiKey, endpoint: apiEndpoint(config.baseUrl).endpoint} : null;
-  if (config.rememberKey) {
-    await chrome.storage.local.set({credentials, settings: config});
-    await chrome.storage.session.remove('credentials');
-  } else {
-    await chrome.storage.session.set({credentials});
-    await chrome.storage.local.set({credentials: null, settings: config});
-  }
+  // API keys are session-only. Never write them to persistent extension storage.
+  await chrome.storage.session.set({credentials});
+  await chrome.storage.local.set({settings: config});
+  await chrome.storage.local.remove(['credentials','apiKey']);
   if (!config.auto) await chrome.alarms.clear('auto-organize');
   else await ensureAlarm();
-  return {saved: true, hasKey: !!apiKey};
+  return {saved: true, hasKey: !!credentials};
 }
 async function handle(message) {
   switch(message.type) {
     case 'state': return getState(message.windowId);
+    case 'siwcStatus': return siwcStatus();
+    case 'siwcModels': return siwcModels();
     case 'settings': { const config = await settings(); return {settings: config, hasKey: !!await getKey(config)}; }
     case 'saveSettings': return serial(() => saveSettings(message));
     case 'clearKey': return serial(async () => { await chrome.storage.session.remove(['credentials','apiKey']); await chrome.storage.local.remove(['credentials','apiKey']); return {cleared:true}; });

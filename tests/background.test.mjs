@@ -5,10 +5,10 @@ function store(initial={}) {
   const values=structuredClone(initial);
   return {values,setAccessLevel:async()=>{},get:async keys=>keys==null?structuredClone(values):Object.fromEntries((Array.isArray(keys)?keys:[keys]).filter(k=>k in values).map(k=>[k,structuredClone(values[k])])),set:async data=>{Object.assign(values,structuredClone(data));},remove:async keys=>{for(const key of Array.isArray(keys)?keys:[keys])delete values[key];}};
 }
-async function setup() {
+async function setup(initialLocal={}) {
   const settings={...DEFAULTS,provider:'api',consent:true};
   const event=()=>({addListener(fn){this.listener=fn;}});
-  const chrome={storage:{session:store(),local:store({settings})},runtime:{id:'test',getURL:()=> 'chrome-extension://test/',onMessage:event(),onStartup:event(),onInstalled:event()},permissions:{contains:async()=>true},alarms:{get:async()=>null,create:async()=>{},clear:async()=>{},onAlarm:event()},tabs:{query:async()=>[{id:1,title:'GitHub',url:'https://github.com',groupId:-1,index:0},{id:2,title:'Python',url:'https://python.org',groupId:-1,index:1}],onCreated:event(),onUpdated:event()},windows:{onRemoved:event()}};
+  const chrome={storage:{session:store(),local:store({settings,...initialLocal})},runtime:{id:'test',getURL:()=> 'chrome-extension://test/',onMessage:event(),onStartup:event(),onInstalled:event()},permissions:{contains:async()=>true},alarms:{get:async()=>null,create:async()=>{},clear:async()=>{},onAlarm:event()},tabs:{query:async()=>[{id:1,title:'GitHub',url:'https://github.com',groupId:-1,index:0},{id:2,title:'Python',url:'https://python.org',groupId:-1,index:1}],onCreated:event(),onUpdated:event()},windows:{onRemoved:event()}};
   globalThis.chrome=chrome;
   await import(`../extension/background.js?test=${Math.random()}`);
   const message=data=>new Promise(resolve=>chrome.runtime.onMessage.listener(data,{id:'test',url:'chrome-extension://test/popup.html'},resolve));
@@ -44,4 +44,18 @@ test('repeated preview requests share one in-flight API call',async()=>{
   globalThis.fetch=async()=>{calls++;await gate;return new Response(JSON.stringify({choices:[{message:{content:'{"groups":[]}'}}]}));};
   try {const a=f.message({type:'preview',windowId:1});const b=f.message({type:'preview',windowId:1});await new Promise(r=>setImmediate(r));release();assert.equal((await a).ok,true);assert.equal((await b).ok,true);assert.equal(calls,1);}
   finally{globalThis.fetch=originalFetch;}
+});
+
+test('API keys are session-only and legacy persistent credentials are removed',async()=>{
+  const f=await setup({credentials:{key:'legacy-test-placeholder',endpoint:'https://api.openai.com/v1/chat/completions'},apiKey:'legacy-unbound-placeholder'});
+  const state=await f.message({type:'settings'});
+  assert.equal(state.result.hasKey,false);
+  assert.equal('credentials' in f.chrome.storage.local.values,false);
+  assert.equal('apiKey' in f.chrome.storage.local.values,false);
+  const saved=await f.message({type:'saveSettings',settings:{...f.settings,rememberKey:true},apiKey:'session-test-placeholder'});
+  assert.equal(saved.ok,true);
+  assert.equal(f.chrome.storage.session.values.credentials.key,'session-test-placeholder');
+  assert.equal(f.chrome.storage.local.values.settings.rememberKey,false);
+  assert.equal('credentials' in f.chrome.storage.local.values,false);
+  assert.doesNotMatch(JSON.stringify(f.chrome.storage.local.values),/session-test-placeholder|legacy-test-placeholder/);
 });

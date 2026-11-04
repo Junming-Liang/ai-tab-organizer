@@ -1,15 +1,18 @@
 {
   "name": "ai-tab-organizer",
-  "version": "0.1.0",
+  "version": "0.2.0-dev",
   "private": true,
   "type": "module",
   "description": "Privacy-first AI tab grouping for Chrome with OpenAI-compatible APIs.",
   "license": "MIT",
-  "engines": {"node": ">=22"},
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "check": "node scripts/check.mjs",
     "build": "node scripts/build.mjs",
-    "test:browser": "node scripts/browser-smoke.mjs"
+    "test:browser": "node scripts/browser-smoke.mjs",
+    "test:companion": "PYTHONPATH=companion python3 -m unittest discover -s companion/tests -v"
   }
 }

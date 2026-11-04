@@ -1,6 +1,15 @@
 import { SYSTEM_PROMPT, apiEndpoint, parseModelJson, toPayload, validateGroups, localGroups } from './core.js';
-export async function classify(tabs, settings, {apiKey = '', fetcher = fetch} = {}) {
+import { nativeRequest, validSiwcModel, validSiwcAccount } from './siwc.js';
+export async function classify(tabs, settings, {apiKey = '', fetcher = fetch, nativeRequester = nativeRequest} = {}) {
   if (settings.provider === 'local') return localGroups(tabs);
+  if (settings.provider === 'siwc') {
+    if (!settings.siwcConsent) throw new Error('请先在设置中单独确认 ChatGPT 数据发送范围及共享计划额度。');
+    if (!validSiwcAccount(settings.siwcAccount)) throw new Error('请检查连接并重新确认 ChatGPT 账户。');
+    if (!validSiwcModel(settings.siwcModel)) throw new Error('请检查连接并选择有效的 ChatGPT 模型。');
+    const result = await nativeRequester('classify', {accountId: settings.siwcAccount, model: settings.siwcModel, categories: settings.categories, tabs: toPayload(tabs)});
+    return validateGroups(result, tabs);
+  }
+  if (settings.provider !== 'api') throw new Error('未知分类引擎。');
   if (!settings.consent) throw new Error('请先在设置中确认 AI 数据发送范围。');
   if (!apiKey) throw new Error('请在设置中填写 API Key。浏览器重启后，会话 Key 需要重新填写。');
   const {endpoint} = apiEndpoint(settings.baseUrl);

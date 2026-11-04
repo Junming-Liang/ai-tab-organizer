@@ -1,38 +1,46 @@
-# ChatGPT plan integration without Codex sessions
+# Independent ChatGPT plan integration
 
-## First-version boundary
+## Current status
 
-The first version offers offline rules and API-key AI providers only. It does **not** start Codex CLI, `codex exec`, or app-server threads; inspect Codex authentication/session files; copy existing tokens; or implement Sign in with ChatGPT (SIWC). No live OAuth or inference was performed while preparing this document.
+The local **0.2.0-dev** adds an experimental Python SIWC companion and a Chrome Native Messaging provider. It does not launch Codex CLI, app-server or any Codex session, and never reads Codex account material. The published 0.1.0 remains API-key/offline only until this change is separately reviewed and published.
 
-A session-free-from-Codex integration is feasible through an official, separate route. It is future work, not a working feature or a promise of account eligibility.
+Synthetic tests cover the implementation. Live OAuth, OS credential-store integration and real plan usage remain unverified and require explicit user authorization. Do not claim that this works for every account or consumes a separate allowance. See the [setup guide](../companion/README.md).
 
-## Official route
+## Security boundaries
 
-OpenAI documents ChatGPT plan usage for open-source, locally hosted apps. Eligible requests can use a separately authorized OAuth credential and the public Responses API, without running Codex. This grants neither access to ChatGPT conversations nor existing account context. Paid or remotely hosted offerings have a different intake path. See the [official overview](https://developers.openai.com/siwc/token-sharing-open-source).
+1. **Independent registration.** A stable app-owned host ID is stored before authorization. New registration uses OpenAI's dynamic public-client flow; returning registration reuses its own issued client ID. Neither a commercial client secret nor an existing Codex token is embedded. An interrupted first registration retains only its pending issued ID, never an active unverified account.
+2. **Explicit browser authorization.** Login is a CLI action, never triggered automatically by classification. The system browser opens OpenAI's authorization endpoint. A temporary listener binds only `127.0.0.1`, with fixed callback path, exact URI reuse, fresh state/nonce and PKCE S256. Repeated fields, wrong origins/path/state and replays are rejected. Idle and absolute connection timeouts prevent a stalled local connection holding the login lock forever.
+3. **Validated identity.** PyJWT verifies RS256 against the fixed OpenAI JWKS, exact issuer, issued-client audience, expiry/issued-at and nonce. Reauthorization must retain the verified subject. Optional token/code hash claims are checked. Registration identity is issuer + issued client ID + verified subject; email is display-only.
+4. **Credentials stay outside Chrome.** Explicit macOS Keychain or Linux Secret Service adapters store a single account-state item. No plaintext fallback, token logging, environment-token import, browser storage or secret command-line parameters. Native launcher uses an isolated Python environment. A missing or locked store blocks work.
+5. **Rotation and sign-out.** A cross-process lock protects account selection and token rotation. Renewed credentials are saved together before inference. Terminal refresh failures clear only the affected account's tokens; transient failures preserve them. Logout attempts revocation and discloses when remote revocation was not confirmed. Registration/host identity survive logout for later sign-in.
+6. **Restricted bridge.** One exact extension origin is allowed; every message rechecks it. Only status, account-specific models and classification are exposed. No arbitrary endpoints, headers, shell, tools or token exports. Requests and responses are size-limited, and the extension retains only a non-secret account-binding hash and display label.
+7. **Stateless inference.** The selected account's listed models are fetched from OpenAI. Classification calls the public Responses endpoint with `store:false`, `stream:true` and only supported fields. No `conversation` or `previous_response_id`. Only a completed canonical assistant text output can become a plan; refusal, incomplete/failed events, interrupted streams or unexpected tools fail closed. Unknown/duplicate tag IDs are rejected twice. No automatic retry or API-key fallback.
 
-API-key requests use the selected provider's API billing and may incur separate charges. They do not automatically use an existing ChatGPT subscription. SIWC-authorized requests instead use eligible ChatGPT plan usage or credits. The UI must clearly distinguish these modes and link to usage controls. See [OpenAI's usage UX guidance](https://developers.openai.com/siwc/ui-ux-guidelines).
+## Permissions and cost
 
-**Independent authentication does not mean independent quota.** The official account documentation says Plus users share a five-hour allowance across participating apps; it does not assign each app a separate allowance. Therefore even a companion that never touches Codex sessions can consume shared plan capacity. Avoid promising “no impact on normal usage.” See [accounts and sessions](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions).
+The extension requests Native Messaging only when the user selects and connects the optional SIWC mode. Installing the local host authorizes one specified extension ID. OAuth grants persistent access until revoked, and real inference can consume shared ChatGPT plan capacity. Independent login does not mean independent quota or no effect on other apps. [Manage usage and access](https://chatgpt.com/settings/usage).
 
-## Proposed companion architecture (not implemented)
+API-key mode remains separately billed by the selected provider. The two consent settings, model choices and credentials are independent. A changed companion account invalidates the saved selection and requires renewed confirmation before sending tab metadata.
 
-1. A locally installed companion owns a stable, opaque host identifier and the app's own registration. First registration uses the documented dynamic-client flow; it needs no embedded client secret or partner API key.
-2. Open the system browser for explicit authorization. Use a temporary `127.0.0.1` callback listener, fresh `state`, OIDC `nonce`, and PKCE S256. Verify state and use exactly the same callback URI for authorization and exchange.
-3. Validate the ID token's signature using OpenAI JWKS, issuer, audience, expiry and nonce. Verify granted ChatGPT-plan scopes before inference. Preserve each issued client ID with its validated account identity, independently of Codex.
+## Validation still required
 
-These requirements come from [registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in). This is a design outline, not a complete OAuth implementation specification.
+- Real macOS Keychain / Linux Secret Service access and locked-store recovery.
+- Real callback/cancel/reauthorization, workspace eligibility, models and usage-limit behavior.
+- Installed host origin restrictions and browser restart/uninstall behavior on supported OSs.
+- Third-party security review before treating the authentication integration as production-ready.
+- Windows packaging and credential storage are not implemented.
 
-4. Keep credentials in the companion's secure OS credential store, never in Chrome storage, logs or source control. An OS store is this project's proposed stronger storage choice. Serialize refreshes and replace rotated credentials together. Provide explicit sign-out/revocation and account selection. The source requires protected local storage and forbids browser token storage: [credential security](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions#credential-security).
-5. The extension would communicate through tightly restricted Native Messaging. Only approved tab IDs, titles and domains would cross that boundary; no full URLs, page contents or tokens. This transport and data minimization are project design decisions, not claims of a supplied OpenAI bridge.
-6. The companion would fetch the selected account's models and call `POST https://api.openai.com/v1/responses` with its own OAuth access token. Use `store: false`, `stream: true`; accept success only after `response.completed`. Handle incomplete streams and late usage failures. Do not call private ChatGPT backend endpoints. See [models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference).
-7. Return validated grouping data through the provider interface. Preserve the normal preview/apply confirmation. No agent tools, shell commands, browser tools or Codex sessions are needed for classification.
+## Official references
 
-## Remaining verification before implementation
+Reviewed 2026-11-04:
 
-- Recheck current preview support, actual account/workspace eligibility, model availability, consent and usage-limit behavior. These have not been validated against a live account.
-- Test OAuth cancellation, callback attacks, account switching, refresh rotation, revocation, unavailable OS credential storage and companion uninstall.
-- Verify supported platforms, Native Messaging installation and extension-ID restrictions.
-- Audit request parameters against [preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations). The direct flow differs from generic API-key Responses usage; several fields are unsupported, and HTTP requests do not use persistent conversation references.
-- Recheck applicable distribution and branding requirements. A public GitHub repository alone does not establish successful registration or permission for a particular account.
+- [OSS registration/sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
+- [Accounts, rotation, revocation and credential security](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions)
+- [Models and Responses](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
+- [Preview request limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
+- [OAuth error recovery](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery)
+- [Published OIDC configuration](https://auth.openai.com/.well-known/openid-configuration)
+- [Chrome Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)
+- [Keyring platform backends](https://keyring.readthedocs.io/en/latest/)
 
-Reviewed against official documentation on 2026-11-04. No executable companion or authentication flow is included in this version.
+This is a project security design, not a claim of official endorsement or an independent security audit.

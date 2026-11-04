@@ -16,7 +16,7 @@ console.log(`Built dist/${filename} (${bytes.length} bytes)\nSHA-256 ${sha}`);
 
 const sourceFilename=`ai-tab-organizer-${manifest.version}-source.zip`;
 await rm(`dist/${sourceFilename}`,{force:true});
-const source=spawnSync('zip',['-q','-r',`dist/${sourceFilename}`,'extension','tests','scripts','docs','.github','.gitignore','package.json','README.md','LICENSE','PRIVACY.md','SECURITY.md'],{stdio:'inherit'});
+const source=spawnSync('zip',['-q','-r',`dist/${sourceFilename}`,'extension','tests','scripts','docs','.github','.gitignore','package.json','README.md','LICENSE','PRIVACY.md','SECURITY.md','companion/README.md','companion/pyproject.toml','companion/ai_tab_companion','companion/tests','-x','*/__pycache__/*','*.pyc'],{stdio:'inherit'});
 if(source.status!==0)throw new Error('Source zip command failed');
 const sourceBytes=await readFile(`dist/${sourceFilename}`);
 await writeFile(`dist/${sourceFilename}.sha256`,`${createHash('sha256').update(sourceBytes).digest('hex')}  ${sourceFilename}\n`);

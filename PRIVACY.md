@@ -1,6 +1,6 @@
 # 隐私说明
 
-版本：0.1.0 · 更新：2026-11-04
+版本：0.2.0-dev（SIWC 实验性） · 更新：2026-11-04
 
 ## 默认行为
 
@@ -20,11 +20,11 @@
 
 ## 在哪里保存
 
-- `chrome.storage.local`：设置与域名排除列表；只有主动勾选才在此保存 API Key。
-- `chrome.storage.session`：默认的 API Key、分类预览、标题/域名元数据、近期状态和撤销记录。Chrome 会在浏览器重启、扩展重载或禁用等情况下清除会话存储。
+- `chrome.storage.local`：设置、域名排除列表及非秘密 SIWC 账户绑定，不保存 API Key。
+- `chrome.storage.session`：API Key、分类预览、标题/域名元数据、近期状态和撤销记录。Chrome 会在浏览器重启、扩展重载或禁用等情况下清除会话存储。
 - 不使用 `storage.sync`，不上传项目服务器，不记录使用遥测。
 
-Key 不显示回 UI、不写日志，存储仅允许扩展可信上下文读取。Chrome 本地存储不是专用加密密钥库；有操作系统/浏览器配置访问权限的人可能读取它。卸载扩展会清除扩展存储，可在设置主动清除 Key。
+Key 不显示回 UI、不写日志，存储仅允许扩展可信上下文读取。0.2.0 起移除明文持久 Key 保存，启动时清除旧版本的本地持久凭据，需要重新输入。会话存储仍可能被控制当前浏览器/操作系统的进程访问，不是对抗已受控设备的保险箱。卸载扩展会清除扩展存储，可在设置主动清除 Key。
 
 ## 权限
 
@@ -34,6 +34,14 @@ Key 不显示回 UI、不写日志，存储仅允许扩展可信上下文读取�
 - `alarms`：可选自动整理的低频调度。
 - 可选 API 站点访问：保存设置时仅请求配置站点；不注入网页脚本。曾授权的旧站点可能仍显示在 Chrome 扩展权限中，可在那里撤销。
 
+## 可选独立 ChatGPT 模式
+
+独立 SIWC 需另行安装本机 companion、授权一个扩展 ID，并通过 OpenAI 系统浏览器 OAuth。扩展只向 companion 发送账户绑定哈希、模型、分类偏好和同样的数值标签 ID / 标题 / 域名。companion 把这些分类数据发往 OpenAI 的公开 Responses API，使用 `store:false`；这不等于承诺服务端不保留任何安全/合规记录，数据仍受 OpenAI 条款与政策约束。
+
+本机系统钥匙串保存独立注册的身份、邮箱、issued client ID、access/refresh/ID tokens 与授权范围。Chrome 只保存模型、非秘密账户绑定、显示信息及独立同意，不接收 OAuth tokens。companion 的私有配置目录只保存随机 host ID、允许的扩展 ID 和启动配置，不保存 token 文件。钥匙串不可用时停止，不回退明文存储。
+
+可选 `nativeMessaging` 权限仅在主动连接时请求。授权后指定扩展可调用该本机程序，但协议不允许任意 shell、URL 或凭据导出。退出账户时尝试撤销远程会话，并清本机 token；若远程撤销未确认会明确提示。卸载扩展不会清除系统钥匙串中的 companion 数据，需在本机退出账户并在 ChatGPT 设置撤销应用。详见 [companion 操作说明](companion/README.md)。
+
 ## Codex 与第三方
 
-不调用 Codex CLI、app-server、后台会话或凭据文件。独立 Sign in with ChatGPT 尚未实现。无广告、分析服务或项目远程代码。下载源码本身或使用 GitHub 会受 GitHub 自身规则约束。
+不调用 Codex CLI、app-server、后台会话或凭据文件。独立 Sign in with ChatGPT 已有本地实验实现，真实 OAuth 尚未验收。无广告、分析服务或项目远程代码。下载源码本身或使用 GitHub 会受 GitHub 自身规则约束。

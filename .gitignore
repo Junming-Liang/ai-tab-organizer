@@ -6,3 +6,8 @@ artifacts/
 .DS_Store
 *.log
 coverage/
+
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/

@@ -9,7 +9,7 @@ function showStatus(message, error = false) { $('status').textContent = message;
 async function refresh() {
   const state = await request('state');
   $('count').textContent = state.count;
-  $('engine').textContent = `${state.settings.provider === 'local' ? '本地规则 · 不联网' : 'AI · 标题 + 域名'}${state.settings.auto ? ' · 自动' : ''}`;
+  $('engine').textContent = `${state.settings.provider === 'local' ? '本地规则 · 不联网' : state.settings.provider === 'siwc' ? 'ChatGPT / SIWC · 共享计划额度' : 'API · 标题 + 域名'}${state.settings.auto ? ' · 自动' : ''}`;
   $('apply').disabled = busy || !state.preview?.groups?.length;
   $('undo').disabled = busy || !state.canUndo;
   $('preview').disabled = busy || state.count < 2;
