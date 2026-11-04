@@ -1,0 +1,8 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Tab Organizer</title><link rel="stylesheet" href="styles.css"></head><body class="popup">
+<header class="brand"><div><div class="eyebrow">A LITTLE LESS CHAOS</div><h1>标签，各就各位。</h1></div><button id="settings" class="icon-button" title="打开设置">设置 ↗</button></header>
+<section class="hero"><span class="count" id="count">—</span><span class="count-label">个标签，待整理</span><p>只整理当前窗口的未分组标签。<br>固定标签、已有分组和排除域名保持原样。</p></section>
+<div class="row buttons"><button id="preview" class="primary">生成分类预览</button><button id="apply" disabled>应用分组</button></div>
+<p id="status" class="status" role="status" aria-live="polite">正在读取标签…</p>
+<section id="preview-section" hidden><div class="section-label">分组预览 · 尚未应用</div><div id="groups"></div></section>
+<footer class="footer"><span class="badge" id="engine">本地规则 · 不联网</span><button id="undo" class="secondary" disabled>撤销上次分组</button></footer>
+<script type="module" src="popup.js"></script></body></html>

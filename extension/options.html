@@ -1,0 +1,19 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设置 · AI Tab Organizer</title><link rel="stylesheet" href="styles.css"></head><body><main class="settings-page">
+<div class="eyebrow">AI TAB ORGANIZER / SETTINGS</div><h1>整理方式，由你决定。</h1><p class="subtitle">默认不联网。连接 AI 时，只发送标签标题和域名，<br>不读取网页正文、URL 路径、查询参数或浏览历史。</p>
+<form id="form">
+<section class="card"><h2>01 / 分类引擎</h2><label class="field"><span>引擎</span><select id="provider"><option value="local">本地规则 · 离线体验</option><option value="api">OpenAI / DeepSeek 兼容 API</option></select></label>
+<div id="api-fields" hidden><div class="presets"><button type="button" id="preset-openai">OpenAI</button><button type="button" id="preset-deepseek">DeepSeek</button></div>
+<label class="field"><span>API Base URL</span><input id="baseUrl" type="url" placeholder="https://api.openai.com/v1" autocomplete="off"></label><p class="hint">支持 Chat Completions + JSON 模式。远程地址必须是 HTTPS；本机服务可用 localhost 或 127.0.0.1。</p>
+<label class="field"><span>模型名称</span><input id="model" placeholder="gpt-4.1-mini" autocomplete="off"></label>
+<label class="field"><span>API Key</span><input id="apiKey" type="password" autocomplete="new-password" placeholder="填入新的 Key；留空保留当前 Key"></label><p class="hint" id="key-status">默认只保留到浏览器关闭，不同步到云端。</p>
+<label class="check"><input id="rememberKey" type="checkbox"><span>在本机持久保存 API Key。Chrome 本地存储并非加密保险箱；有本机访问权限的人可能读取它。</span></label>
+<label class="check"><input id="consent" type="checkbox"><span>我同意把符合条件标签的标题和域名发送到上方 API 地址。标题可能含私人信息；服务商可能保留请求，调用可能计费。</span></label></div>
+<div class="notice" id="local-note">本地规则按标题关键词和域名分组，不是 AI 推理，不产生 API 费用。保存本地模式会清除已有 API Key；切回 AI 时需重新填写。</div>
+</section>
+<section class="card"><h2>02 / 分类偏好</h2><label class="field"><span>希望使用的分类（给 AI 的提示）</span><input id="categories" maxlength="300" placeholder="开发, 研究, 工作, 阅读, 购物, 娱乐"></label>
+<label class="field"><span>排除域名（每行或逗号分隔，包含其子域名）</span><textarea id="excludedDomains" placeholder="bank.example.com&#10;mail.example.com"></textarea></label><p class="hint">例如 example.com 也会排除 mail.example.com。最多整理当前窗口前 100 个符合条件的标签。</p>
+<label class="check"><input id="auto" type="checkbox"><span>自动整理：新标签加载完成后自动分组，不再逐次预览。每个窗口最多每 5 分钟尝试一次；使用 AI 会持续发送符合条件的标题和域名并可能产生费用。</span></label><p class="hint">默认关闭。已有分组不会重新整理；每次只保留最近一次撤销，撤销会同时暂停自动整理。</p></section>
+<section class="card"><h2>03 / 关于本机 Codex 额度</h2><p class="hint">本版不会启动 Codex、不创建 Codex 会话，也不读取 Codex 账号、凭据或会话文件。</p><p class="hint">独立的 Sign in with ChatGPT 授权与 Responses 接口是后续方向，尚未实现。API Key 使用服务商 API 计费，不能代替 ChatGPT 订阅额度。</p></section>
+<div class="bottom-actions"><button type="submit" class="primary" id="save">保存设置</button><button type="button" id="clear-key" class="secondary">清除已保存的 Key</button></div><p id="status" class="status" role="status" aria-live="polite"></p>
+</form><ul class="privacy-list"><li>不采集遥测，无广告，没有项目服务器。</li><li>隐身模式不启用；固定标签和已有分组不会被整理。</li><li>预览和撤销记录只保存在当前浏览器会话中，重启后清除。</li><li>只在保存 API 设置时申请对应站点访问权限，可在 Chrome 扩展设置中撤销。</li></ul>
+</main><script type="module" src="options.js"></script></body></html>

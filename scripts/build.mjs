@@ -1,0 +1,23 @@
+import {cp,mkdir,rm,readFile,writeFile} from 'node:fs/promises';
+import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+const manifest=JSON.parse(await readFile('extension/manifest.json','utf8'));
+await mkdir('dist',{recursive:true});
+await rm('dist/extension',{recursive:true,force:true});
+await cp('extension','dist/extension',{recursive:true});
+const filename=`ai-tab-organizer-${manifest.version}.zip`;
+await rm(`dist/${filename}`,{force:true});
+const result=spawnSync('zip',['-q','-r',`../${filename}`,'.'],{cwd:'dist/extension',stdio:'inherit'});
+if(result.status!==0)throw new Error('zip command failed');
+const bytes=await readFile(`dist/${filename}`);
+const sha=createHash('sha256').update(bytes).digest('hex');
+await writeFile(`dist/${filename}.sha256`,`${sha}  ${filename}\n`);
+console.log(`Built dist/${filename} (${bytes.length} bytes)\nSHA-256 ${sha}`);
+
+const sourceFilename=`ai-tab-organizer-${manifest.version}-source.zip`;
+await rm(`dist/${sourceFilename}`,{force:true});
+const source=spawnSync('zip',['-q','-r',`dist/${sourceFilename}`,'extension','tests','scripts','docs','.github','.gitignore','package.json','README.md','LICENSE','PRIVACY.md','SECURITY.md'],{stdio:'inherit'});
+if(source.status!==0)throw new Error('Source zip command failed');
+const sourceBytes=await readFile(`dist/${sourceFilename}`);
+await writeFile(`dist/${sourceFilename}.sha256`,`${createHash('sha256').update(sourceBytes).digest('hex')}  ${sourceFilename}\n`);
+console.log(`Built dist/${sourceFilename} (${sourceBytes.length} bytes)`);

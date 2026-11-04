@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "AI Tab Organizer · 标签整理",
+  "version": "0.1.0",
+  "description": "按主题整理 Chrome 原生标签组，支持本地规则、OpenAI/DeepSeek 兼容 API 。",
+  "minimum_chrome_version": "120",
+  "permissions": ["tabs", "tabGroups", "storage", "alarms"],
+  "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "background": {"service_worker": "background.js", "type": "module"},
+  "action": {"default_popup": "popup.html", "default_title": "整理标签"},
+  "options_page": "options.html",
+  "incognito": "not_allowed",
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'"},
+  "icons": {"16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png"}
+}
