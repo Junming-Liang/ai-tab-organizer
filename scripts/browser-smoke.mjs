@@ -1,7 +1,7 @@
 // Optional local QA: npm install --no-save playwright, then npm run test:browser.
 // Set CHROMIUM_PATH for an existing Chromium installation. No live AI API used.
 import {createRequire} from 'node:module';
-import {mkdtemp,rm,mkdir} from 'node:fs/promises';
+import {mkdtemp,rm,mkdir,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -201,4 +201,22 @@ try {
   assert.equal(await options.locator('#siwcConsent').isChecked(),false);
   assert.equal((await worker.evaluate(()=>chrome.tabGroups.query({}))).length,0);
   console.log('Chromium smoke passed: extension loads; offline preview/apply/undo; pinned preserved; stale navigation rejected; settings save; native existing-group singleton match, metadata preservation, conservative undo, editable preview and stale revision rejection; SIWC fixture permission denial, account/model selection, preview, changed-account rejection and consent reset. No live OAuth or native host used.');
+} catch(error) {
+  // Every page in this temporary profile is synthetic. Keep useful evidence on
+  // CI failures without reading any real profile, account or credential store.
+  try {
+    await mkdir('artifacts',{recursive:true});
+    const popupPage=context?.pages().find(page=>page.url().endsWith('/popup.html'));
+    if(popupPage){
+      await popupPage.screenshot({path:'artifacts/failure-popup.png',fullPage:true});
+      const diagnostic=await popupPage.evaluate(async()=>{
+        const windowId=(await chrome.windows.getCurrent()).id;
+        const state=await chrome.runtime.sendMessage({type:'state',windowId});
+        return {status:document.querySelector('#status')?.textContent,preview:state.result?.preview,groups:await chrome.tabGroups.query({windowId}),tabs:(await chrome.tabs.query({windowId})).map(({id,index,groupId,active,title,url})=>({id,index,groupId,active,title,url}))};
+      });
+      await writeFile('artifacts/failure-state.json',JSON.stringify(diagnostic,null,2));
+      console.error('Synthetic browser failure state:',JSON.stringify(diagnostic));
+    }
+  } catch { console.error('Could not capture synthetic browser failure state.'); }
+  throw error;
 } finally { await context?.close(); await rm(profile,{recursive:true,force:true}); }
