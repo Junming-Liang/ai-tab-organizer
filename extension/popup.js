@@ -44,6 +44,10 @@ async function refresh() {
     const amount=document.createElement('span'); amount.className='badge'; amount.textContent=`${group.targetGroupId == null ? '新建' : '加入已有'} · ${group.tabIds.length} 个`;
     heading.append(dot,name,amount); card.append(heading);
     const target=targetSelect(group,preview.existingGroups || []); card.append(target);
+    if (preview.existingGroups?.some(item => item.id === group.targetGroupId && item.collapsed)) {
+      const hint=document.createElement('p'); hint.className='hint';
+      hint.textContent='若加入当前活动标签，Chrome 会自动展开此组。'; card.append(hint);
+    }
     target.addEventListener('change',() => {
       const next=structuredClone(groups);
       if (target.value === 'skip') next.splice(index,1);

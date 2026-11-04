@@ -53,7 +53,7 @@ async function apply(windowId, message = {}) {
   if (!value.groups.length) throw new Error('预览中没有可应用的分组。');
   const result = await applyGroups(chrome, value, config, undo => write('undo', windowId, undo));
   await chrome.storage.session.remove(keyFor('preview', windowId));
-  await status(windowId, `已整理 ${result.tabs} 个标签到 ${result.groups} 个组（${result.existing} 个已有组），可撤销。`);
+  await status(windowId, `已整理 ${result.tabs} 个标签到 ${result.groups} 个组（${result.existing} 个已有组），可撤销。${result.expanded ? 'Chrome 已展开当前活动标签所在组。' : ''}`);
   return result;
 }
 async function getState(windowId) {

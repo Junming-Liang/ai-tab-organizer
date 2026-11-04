@@ -90,3 +90,41 @@ test('failed preflight cannot later undo a concurrent manual assignment',async()
     assert.equal((await undoGroups(f.api,f.undo)).tabs,0);assert.equal(f.tabs[0].groupId,target);
   }
 });
+
+test('Chrome may expand a collapsed target for the inserted active tab without changing focus',async()=>{
+  const f=fixture();f.tabs[0].active=true;const group=f.api.tabs.group;
+  f.api.tabs.group=async options=>{const id=await group(options);f.groups[0].collapsed=false;return id;};
+  const result=await applyGroups(f.api,f.preview,DEFAULTS,f.save);
+  assert.equal(result.expanded,1);assert.equal(f.undo.phase,'complete');
+  assert.equal(f.calls.filter(call=>call[0]==='update').length,0);assert.equal(f.tabs[0].active,true);
+  await undoGroups(f.api,f.undo);assert.equal(f.tabs[0].groupId,-1);assert.equal(f.tabs[0].active,true);
+  assert.equal(f.groups[0].collapsed,false,'Undo does not force focus-changing collapse');
+});
+test('active-tab expansion exception never hides concurrent metadata or membership changes',async()=>{
+  for(const mutate of [f=>f.groups[0].title='Changed',f=>f.groups[0].color='red',f=>f.groups[0].shared=true,f=>f.tabs[2].groupId=91,f=>f.tabs.push({id:22,windowId:1,index:7,groupId:90}),f=>f.groups[1].collapsed=true]) {
+    const f=fixture();f.tabs[0].active=true;const group=f.api.tabs.group;
+    f.api.tabs.group=async options=>{const id=await group(options);f.groups[0].collapsed=false;mutate(f);return id;};
+    await assert.rejects(applyGroups(f.api,f.preview,DEFAULTS,f.save),/撤销/);
+    assert.equal(f.undo.phase,'applying');
+  }
+});
+test('unexpected collapse changes are rejected unless the same inserted tab remains active',async()=>{
+  for(const active of ['neither','before-only','after-only']) {
+    const f=fixture();f.tabs[0].active=active==='before-only';const group=f.api.tabs.group;
+    f.api.tabs.group=async options=>{const id=await group(options);f.groups[0].collapsed=false;f.tabs[0].active=active==='after-only';return id;};
+    await assert.rejects(applyGroups(f.api,f.preview,DEFAULTS,f.save),/撤销/);
+  }
+});
+test('different active tabs before and after grouping cannot excuse collapse changes',async()=>{
+  const f=fixture();f.preview.groups[0].tabIds=[1,2];f.tabs[0].active=true;const group=f.api.tabs.group;
+  f.api.tabs.group=async options=>{const id=await group(options);f.groups[0].collapsed=false;f.tabs[0].active=false;f.tabs[1].active=true;return id;};
+  await assert.rejects(applyGroups(f.api,f.preview,DEFAULTS,f.save),/撤销/);
+});
+test('accepted native expansion becomes the expected state for subsequent groups',async()=>{
+  const f=fixture();f.tabs[0].active=true;f.preview.groups.push({title:'New',color:'green',tabIds:[2,12]});
+  const group=f.api.tabs.group;
+  f.api.tabs.group=async options=>{const id=await group(options);if(options.groupId===90)f.groups[0].collapsed=false;return id;};
+  const result=await applyGroups(f.api,f.preview,DEFAULTS,f.save);
+  assert.equal(result.expanded,1);assert.equal(result.groups,2);assert.equal(f.undo.phase,'complete');
+  assert.equal((await undoGroups(f.api,f.undo)).tabs,3);assert.equal(f.groups[0].collapsed,false);
+});

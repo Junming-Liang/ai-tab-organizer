@@ -93,6 +93,8 @@ try {
       return {title:group.title,color:group.color,collapsed:group.collapsed,members};
     },groupId);
   }
+  await worker.evaluate(id=>chrome.tabs.update(id,{active:true}),incomingId);
+  assert.equal(await worker.evaluate(async id=>(await chrome.tabs.get(id)).active,incomingId),true);
   const oldSnapshot=await groupSnapshot(oldGroup.id);
   // Exercise reversible destination editing and unassigned singleton controls.
   await previewSingle();
@@ -105,16 +107,35 @@ try {
   assert.deepEqual(await groupSnapshot(oldGroup.id),oldSnapshot,'Editing a preview must not mutate native groups');
   assert.equal(await popup.locator('.group').count(),1,'A single incoming tab can match a native group');
   assert.deepEqual(await groupSnapshot(oldGroup.id),oldSnapshot,'Preview must be read-only');
+  assert.match(await popup.locator('.group .hint').textContent(),/Chrome 会自动展开/);
   await popup.screenshot({path:'artifacts/existing-group-preview.png',fullPage:true});
   await popup.locator('#apply').click();
   await popup.waitForFunction(()=>document.querySelector('#status').textContent.includes('已整理'));
   assert.equal(await worker.evaluate(async id=>(await chrome.tabs.get(id)).groupId,incomingId),oldGroup.id);
-  assert.deepEqual(await groupSnapshot(oldGroup.id),{...oldSnapshot,members:[oldGroup.memberId,incomingId].sort((a,b)=>a-b)},'Existing group metadata and old members must survive apply');
+  const expandedSnapshot={...oldSnapshot,collapsed:false};
+  assert.deepEqual(await groupSnapshot(oldGroup.id),{...expandedSnapshot,members:[oldGroup.memberId,incomingId].sort((a,b)=>a-b)},'Only Chrome active-tab expansion may change old group metadata');
+  assert.equal(await worker.evaluate(async id=>(await chrome.tabs.get(id)).active,incomingId),true,'Applying must not switch away from the active inserted tab');
+  assert.match(await popup.locator('#status').textContent(),/Chrome 已展开/);
   assert.equal((await worker.evaluate(()=>chrome.tabGroups.query({}))).length,1,'Do not create a duplicate same-topic group');
   await popup.locator('#undo').click();
   await popup.waitForFunction(()=>document.querySelector('#status').textContent.includes('已撤销'));
-  assert.deepEqual(await groupSnapshot(oldGroup.id),oldSnapshot,'Undo removes only the inserted member');
+  assert.deepEqual(await groupSnapshot(oldGroup.id),expandedSnapshot,'Undo removes only the inserted member, without forcing collapse');
   assert.equal(await worker.evaluate(async id=>(await chrome.tabs.get(id)).groupId,incomingId),-1);
+
+  // Inactive insertions must keep the existing collapse state, unlike the active case.
+  await worker.evaluate(async id=>{
+    const panel=(await chrome.tabs.query({})).find(tab=>tab.url?.endsWith('/popup.html'));
+    await chrome.tabs.update(panel.id,{active:true});
+    await chrome.tabGroups.update(id,{collapsed:true});
+  },oldGroup.id);
+  await previewSingle(); await popup.locator('#apply').click();
+  await popup.waitForFunction(()=>document.querySelector('#status').textContent.includes('已整理'));
+  assert.deepEqual(await groupSnapshot(oldGroup.id),{...oldSnapshot,members:[oldGroup.memberId,incomingId].sort((a,b)=>a-b)},'Inactive insertions preserve collapsed groups');
+  assert.equal(await worker.evaluate(async id=>(await chrome.tabs.get(id)).active,incomingId),false);
+  await popup.locator('#undo').click();
+  await popup.waitForFunction(()=>document.querySelector('#status').textContent.includes('已撤销'));
+  assert.deepEqual(await groupSnapshot(oldGroup.id),oldSnapshot);
+  await worker.evaluate(id=>chrome.tabs.update(id,{active:true}),incomingId);
 
   // A renamed destination invalidates a stale preview without changing tabs.
   await previewSingle();
@@ -137,7 +158,7 @@ try {
   await popup.locator('#undo').click();
   await popup.waitForFunction(()=>document.querySelector('#status').textContent.includes('已撤销'));
   assert.deepEqual(await groupSnapshot(manualGroupId),manualSnapshot);
-  assert.deepEqual(await groupSnapshot(oldGroup.id),oldSnapshot);
+  assert.deepEqual(await groupSnapshot(oldGroup.id),expandedSnapshot);
 
   const options=await context.newPage();await options.goto(`chrome-extension://${id}/options.html`);
   await options.locator('#categories').fill('开发, 阅读');await options.locator('#save').click();

@@ -23,6 +23,7 @@ export async function applyGroups(api, preview, settings, saveUndo) {
   // are never part of affected/assignments, including during crash recovery.
   await saveUndo(undo);
   let mutationAttempted = false;
+  const expandedGroups = [];
   try {
     for (const group of groups) {
       mutationAttempted = false;
@@ -40,19 +41,27 @@ export async function applyGroups(api, preview, settings, saveUndo) {
       if (group.targetGroupId == null) undo.createdGroupIds.push(groupId);
       undo.assignments.push({groupId, tabIds:[...group.tabIds]});
       undo.pending = null; await saveUndo(undo);
-      // Existing group title/color/collapse are deliberately never updated.
+      // Never rewrite existing group metadata. Chrome itself expands a collapsed
+      // group when the active tab joins it; do not hide or deactivate that tab.
       if (group.targetGroupId == null) await api.tabGroups.update(groupId, {title:group.title, color:group.color, collapsed:false});
       const grouped = await Promise.all(group.tabIds.map(id => api.tabs.get(id)));
       if (grouped.some(tab => tab.windowId !== preview.windowId || tab.groupId !== groupId || tab.pinned)) throw new Error('整理期间标签发生变化。');
       if (expectedGroups) {
         const after = await readGroups(api, preview.windowId, settings);
-        if (expectedGroups.some(before => !sameGroup(before, after.find(item => item.id === before.id), before.id === group.targetGroupId ? group.tabIds : []))
+        const activeAdded = live.find(tab => tab.active === true && grouped.some(item => item.id === tab.id && item.active === true));
+        const targetBefore = expectedGroups.find(item => item.id === group.targetGroupId);
+        const targetAfter = after.find(item => item.id === group.targetGroupId);
+        const autoExpanded = !!activeAdded && targetBefore?.collapsed === true && targetAfter?.collapsed === false;
+        if (expectedGroups.some(before => !sameGroup(
+          autoExpanded && before.id === group.targetGroupId ? {...before, collapsed:false} : before,
+          after.find(item => item.id === before.id), before.id === group.targetGroupId ? group.tabIds : []))
           || after.length !== expectedGroups.length + (group.targetGroupId == null ? 1 : 0)) throw new Error('整理期间已有组发生变化。');
+        if (autoExpanded) expandedGroups.push(group.targetGroupId);
         expectedGroups = after;
       }
     }
     undo.phase = 'complete'; await saveUndo(undo);
-    return {groups:groups.length, tabs:undo.affected.length, existing:groups.filter(group => group.targetGroupId != null).length};
+    return {groups:groups.length, tabs:undo.affected.length, existing:groups.filter(group => group.targetGroupId != null).length, expanded:expandedGroups.length};
   } catch {
     // A failed preflight is known not to have grouped anything this round. Do
     // not later mistake a user's concurrent manual move for our own mutation.
